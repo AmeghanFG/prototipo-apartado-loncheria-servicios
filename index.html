@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<!--
+  =====================================================================
+  PROTOTIPO DIGITAL — App de pre-pedido y apartado de comida
+  Proyecto final HCI (Práctica 2 → Práctica 3)
+  Escenario 1: "Apartar comida para evitar filas en el receso"
+
+  Estructura del archivo:
+    1. <head>: Bootstrap 5, Bootstrap Icons y estilos propios (sección CSS)
+    2. Panel del moderador (fuera del celular, solo para pruebas de la P3)
+    3. Marco del celular con las 8 pantallas:
+         P1 Login · P2 Locales · P3 Menú · P4 Carrito · P5 Pago
+         P5.4 Métodos de pago · P6 Procesando · P7 Código de pedido
+    4. Modales (alertas de error y editor de teléfono) y aviso breve, dentro del celular
+    5. Scripts: Bootstrap, librería de QR y app.js (toda la lógica)
+
+  Cada pantalla es una <section class="pantalla" id="p-...">.
+  app.js muestra una sola a la vez con la función irA('p-...').
+  Para modificar textos de una pantalla, busca su marcador "PANTALLA X".
+  Los datos (menú, precios, usuario demo, etc.) están en app.js, sección CONFIG/DATOS.
+  =====================================================================
+-->
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Prototipo · Apartado de comida — Comida Con Conciencia</title>
+
+  <!-- Bootstrap 5 (estilos) y Bootstrap Icons (íconos) desde CDN: requiere internet -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+
+  <!-- =================================================================
+       SECCIÓN CSS — estilos propios
+       Paleta: verde como color principal (igual que el prototipo en papel),
+       rojo solo para errores y acciones destructivas (tema 4.2, color).
+       Cambia los colores en :root para ajustar toda la app.
+       ================================================================= -->
+  <style>
+    :root {
+      --verde: #2e7d32;          /* Color principal: botones, encabezados, carrito */
+      --verde-claro: #e8f5e9;    /* Fondos suaves de encabezados */
+      --verde-medio: #a5d6a7;    /* Bordes y detalles */
+      --error: #c62828;          /* Errores (texto y bordes) */
+      --gris-no-disp: #e0e0e0;   /* Fondo de artículos no disponibles */
+    }
+
+    body { background: #f1f3f1; }
+
+    /* ---------- Marco del celular ---------- */
+    .celular {
+      width: 375px; max-width: 100%;
+      height: 760px;
+      background: #fff;
+      border: 10px solid #222;
+      border-radius: 36px;
+      overflow: hidden;
+      position: relative;          /* Para el botón flotante del carrito */
+      box-shadow: 0 10px 30px rgba(0,0,0,.15);
+    }
+    .celular-contenido { height: 100%; overflow-y: auto; position: relative; }
+
+    /* Cada pantalla ocupa todo el celular; app.js agrega/quita .d-none */
+    .pantalla { min-height: 100%; display: flex; flex-direction: column; }
+
+    /* ---------- Encabezado verde (barra superior) ---------- */
+    .barra {
+      background: var(--verde-claro);
+      border-bottom: 3px solid var(--verde);
+      padding: .75rem 1rem;
+      display: flex; align-items: center; gap: .5rem;
+      position: sticky; top: 0; z-index: 5;
+    }
+    .barra h1 { font-size: 1.15rem; margin: 0; flex: 1; text-align: center; color: var(--verde); }
+    .btn-icono { border: 0; background: transparent; font-size: 1.35rem; color: var(--verde); padding: 0 .25rem; }
+
+    /* Avatar circular del usuario (la "J" del prototipo en papel) */
+    .avatar {
+      width: 34px; height: 34px; border-radius: 50%;
+      border: 2px solid var(--verde); color: var(--verde);
+      display: inline-flex; align-items: center; justify-content: center; font-weight: 600;
+    }
+
+    /* ---------- Botones principales ---------- */
+    .btn-app { background: var(--verde); color: #fff; font-weight: 600; border-radius: 12px; padding: .7rem; }
+    .btn-app:hover, .btn-app:focus { background: #1b5e20; color: #fff; }
+
+    /* ---------- Tarjeta de producto (menú) ---------- */
+    .producto {
+      border: 1.5px solid #555; border-radius: 12px; padding: .6rem;
+      display: flex; gap: .6rem; position: relative; margin-bottom: .6rem;
+    }
+    .producto .img-prod {
+      width: 64px; height: 64px; flex-shrink: 0; border: 1.5px solid #555; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center; font-size: 1.8rem; color: #555;
+    }
+    .producto .precio {
+      position: absolute; top: .4rem; right: .5rem;
+      border: 1.5px solid var(--verde); border-radius: 6px; padding: 0 .35rem; font-weight: 600;
+    }
+    .producto .btn-agregar {
+      position: absolute; bottom: .4rem; right: .5rem;
+      width: 32px; height: 32px; border-radius: 50%;
+      border: 2px solid var(--verde); background: #fff; color: var(--verde);
+      display: flex; align-items: center; justify-content: center; font-size: 1.1rem;
+    }
+    .producto .btn-agregar.agregado { background: var(--verde); color: #fff; }   /* 3.2: palomita */
+    /* 3.1: artículo no disponible = sombreado + texto (no solo color) */
+    .producto.no-disponible { background: var(--gris-no-disp); opacity: .75; }
+    .producto.no-disponible .etiqueta-nd { position: absolute; bottom: .5rem; right: 3rem; font-weight: 700; font-size: .8rem; }
+
+    /* ---------- Botón flotante del carrito (siempre visible, esquina inferior derecha) ---------- */
+    .carrito-flotante {
+      position: absolute; right: 18px; bottom: 18px; z-index: 10;
+      width: 60px; height: 60px; border-radius: 50%;
+      background: #f9a825; border: 2px solid #333; font-size: 1.6rem; color: #222;
+    }
+
+    /* ---------- Selector segmentado Hoy / Mañana ---------- */
+    .segmentado .btn { border: 2px solid var(--verde); color: var(--verde); font-weight: 600; }
+    .segmentado .btn-check:checked + .btn { background: var(--verde); color: #fff; }
+
+    /* ---------- Errores en formularios (login y tarjeta) ---------- */
+    .form-control.is-invalid { border-color: var(--error); }
+    .invalid-feedback { color: var(--error); }
+
+    /* ---------- Pantalla Procesando ---------- */
+    .icono-procesando { font-size: 5rem; color: var(--verde); animation: latido 1.2s ease-in-out infinite; }
+    @keyframes latido { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+
+    /* ---------- Estado del pedido resaltado (pantalla 7) ---------- */
+    .estado-pedido {
+      border: 2px solid var(--verde); background: var(--verde-claro); color: var(--verde);
+      border-radius: 6px; padding: .15rem .6rem; font-weight: 700;
+    }
+
+    /* ---------- Modales dentro del celular (se centran en el teléfono) ---------- */
+    .capa-modal {
+      position: absolute; inset: 0; z-index: 50;
+      background: rgba(0,0,0,.45);
+      display: flex; align-items: center; justify-content: center; padding: 1.5rem;
+    }
+    .tarjeta-modal { background: #fff; border-radius: 16px; padding: 1.5rem; width: 100%; max-width: 300px; }
+
+    /* ---------- Aviso breve dentro del celular ---------- */
+    .aviso-celular {
+      position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 40;
+      background: #222; color: #fff; border-radius: 10px; padding: .5rem .9rem; font-size: .85rem;
+      width: max-content; max-width: 90%;
+    }
+
+    /* ---------- Panel del moderador ---------- */
+    .panel-moderador { max-width: 340px; font-size: .9rem; }
+  </style>
+</head>
+
+<body>
+<div class="container py-4">
+  <div class="d-flex flex-wrap gap-4 justify-content-center align-items-start">
+
+    <!-- =================================================================
+         PANEL DEL MODERADOR (no es parte de la app)
+         Sirve para la Práctica 3: el moderador puede forzar errores
+         (artículo no disponible, falla al agregar, sin método de pago)
+         y cambiar la hora simulada del dispositivo.
+         ================================================================= -->
+    <aside class="card panel-moderador order-2 order-lg-1">
+      <div class="card-body">
+        <h2 class="h6 mb-2"><i class="bi bi-sliders"></i> Panel del moderador</h2>
+        <p class="text-secondary small mb-3">No forma parte de la app. Úsalo para preparar las tareas de prueba.</p>
+
+        <p class="mb-1"><strong>Credenciales de prueba</strong></p>
+        <p class="small mb-3">Usuario: <code id="mod-usuario"></code> · Contraseña: <code id="mod-pass"></code></p>
+
+        <label for="mod-hora" class="form-label mb-1"><strong>Hora simulada del celular</strong></label>
+        <input type="time" id="mod-hora" class="form-control form-control-sm mb-1" />
+        <p class="small text-secondary mb-3">Se usa para validar los 15 min de anticipación.</p>
+
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" id="mod-no-disponible" />
+          <label class="form-check-label" for="mod-no-disponible">Licuado "Creativo" no disponible (3.1)</label>
+        </div>
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" id="mod-falla-carrito" />
+          <label class="form-check-label" for="mod-falla-carrito">Falla al agregar al carrito (3.3)</label>
+        </div>
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" id="mod-sin-metodo" />
+          <label class="form-check-label" for="mod-sin-metodo">Sin método de pago (5.3)</label>
+        </div>
+
+        <button class="btn btn-outline-secondary btn-sm w-100" id="mod-reiniciar">
+          <i class="bi bi-arrow-counterclockwise"></i> Reiniciar prototipo
+        </button>
+      </div>
+    </aside>
+
+    <!-- =================================================================
+         MARCO DEL CELULAR — aquí viven todas las pantallas de la app
+         ================================================================= -->
+    <main class="celular order-1 order-lg-2" aria-label="Prototipo de la aplicación">
+      <div class="celular-contenido" id="contenido">
+
+        <!-- =============================================================
+             PANTALLA 1: LOGIN  (prototipo en papel: 1 y 1.1)
+             Errores: "Usuario no encontrado" y "Contraseña incorrecta",
+             debajo de cada campo y en rojo (independientes entre sí).
+             ============================================================= -->
+        <section class="pantalla" id="p-login">
+          <div class="flex-grow-1 d-flex flex-column justify-content-center px-4">
+            <div class="text-center mb-4">
+              <i class="bi bi-basket2" style="font-size:3rem;color:var(--verde)"></i>
+              <h1 class="h4 mt-2" style="color:var(--verde)">Aparta tu comida</h1>
+            </div>
+
+            <form id="form-login" novalidate>
+              <!-- Campo: usuario -->
+              <div class="mb-3">
+                <label for="login-usuario" class="visually-hidden">Usuario</label>
+                <div class="input-group has-validation">
+                  <span class="input-group-text"><i class="bi bi-person-fill"></i></span>
+                  <input type="text" class="form-control" id="login-usuario" placeholder="Usuario" autocomplete="username" />
+                  <div class="invalid-feedback">Usuario no encontrado</div>
+                </div>
+              </div>
+              <!-- Campo: contraseña -->
+              <div class="mb-2">
+                <label for="login-pass" class="visually-hidden">Contraseña</label>
+                <div class="input-group has-validation">
+                  <span class="input-group-text"><i class="bi bi-lock-fill"></i></span>
+                  <input type="password" class="form-control" id="login-pass" placeholder="Contraseña" autocomplete="current-password" />
+                  <div class="invalid-feedback">Contraseña incorrecta</div>
+                </div>
+              </div>
+              <!-- Recordarme -->
+              <div class="form-check mb-4">
+                <input class="form-check-input" type="checkbox" id="login-recordar" />
+                <label class="form-check-label small" for="login-recordar">Recuérdame</label>
+              </div>
+              <button type="submit" class="btn btn-app w-100">Login</button>
+            </form>
+          </div>
+        </section>
+
+        <!-- =============================================================
+             PANTALLA 2: LOCALES DEL EDIFICIO  (prototipo en papel: 2)
+             Muestra la lonchería "Comida Con Conciencia".
+             Los filtros están fuera del alcance del escenario 1.
+             ============================================================= -->
+        <section class="pantalla d-none" id="p-locales">
+          <header class="barra">
+            <h1 class="text-start">Servicios · Campus Central</h1>
+            <span class="avatar" aria-label="Perfil de usuario">J</span>
+          </header>
+
+          <!-- Filtros (desplegable). Solo informativo en este prototipo -->
+          <div class="px-3 pt-3">
+            <button class="btn w-100 d-flex justify-content-between align-items-center border-bottom rounded-0"
+                    data-bs-toggle="collapse" data-bs-target="#filtros" aria-expanded="false" aria-controls="filtros">
+              <span>Filtros</span><i class="bi bi-chevron-down"></i>
+            </button>
+            <div class="collapse" id="filtros">
+              <p class="small text-secondary p-2 mb-0">
+                <i class="bi bi-info-circle"></i> Los filtros (por ejemplo, por precio) no se incluyen en el escenario 1 de este prototipo.
+              </p>
+            </div>
+          </div>
+
+          <!-- Tarjeta de la lonchería: al tocar nombre o imagen va al menú -->
+          <div class="p-3">
+            <button class="btn w-100 text-center border rounded-4 p-3" id="btn-loncheria" aria-label="Abrir menú de Comida Con Conciencia">
+              <div class="mx-auto mb-2 d-flex align-items-center justify-content-center rounded-circle"
+                   style="width:110px;height:110px;border:3px double var(--verde)">
+                <span class="fw-bold fs-3" style="color:var(--verde)">CCC</span>
+              </div>
+              <span class="d-block fw-semibold">Comida Con Conciencia</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- =============================================================
+             PANTALLA 3: MENÚ DE LA LONCHERÍA  (prototipo en papel: 3, 3.1, 3.2, 3.3)
+             La lista de productos se genera desde app.js (DATOS.loncheria).
+             - 3.1 No disponible: tarjeta sombreada + texto "No disponible"
+             - 3.2 Agregado: el botón "+" cambia a palomita
+             - 3.3 Error al agregar: modal "Error al agregar al carrito"
+             ============================================================= -->
+        <section class="pantalla d-none" id="p-menu">
+          <header class="barra">
+            <button class="btn-icono" data-ir="p-locales" aria-label="Regresar"><i class="bi bi-chevron-left"></i></button>
+            <h1>&nbsp;</h1>
+            <span class="avatar" aria-label="Perfil de usuario">J</span>
+          </header>
+          <!-- Imagen decorativa de la lonchería (hojas) -->
+          <div class="text-center py-3" style="color:var(--verde-medio);font-size:2rem" aria-hidden="true">
+            <i class="bi bi-flower1"></i> <i class="bi bi-moon"></i> <i class="bi bi-moon"></i> <i class="bi bi-moon"></i> <i class="bi bi-flower1"></i>
+          </div>
+          <div class="px-3 pb-5 mb-5">
+            <h2 class="h5 text-center mb-3">Comida Con Conciencia</h2>
+            <!-- app.js inserta aquí las categorías y productos -->
+            <div id="lista-menu"></div>
+          </div>
+          <!-- El botón flotante del carrito está fuera del área con scroll (ver final del celular) -->
+        </section>
+
+        <!-- =============================================================
+             PANTALLA 4: CARRITO  (prototipo en papel: 4, 4.1, 4.2)
+             - Artículos con −, cantidad, + y eliminar
+             - Horario de recogida: Hoy / Mañana + hora
+             - 4.1 Horario no válido (menos de 15 min de anticipación)
+             - 4.2 Carrito vacío
+             ============================================================= -->
+        <section class="pantalla d-none" id="p-carrito">
+          <header class="barra">
+            <button class="btn-icono" data-ir="p-menu" aria-label="Regresar"><i class="bi bi-chevron-left"></i></button>
+            <h1>Mi carrito</h1>
+            <span style="width:30px"></span>
+          </header>
+
+          <div class="p-3 flex-grow-1">
+            <!-- app.js inserta aquí los artículos del carrito -->
+            <div id="lista-carrito"></div>
+
+            <!-- Horario de recogida -->
+            <div class="border rounded-4 p-3 mb-3">
+              <h2 class="h6" style="color:var(--verde)">Horario de recogida</h2>
+              <div class="btn-group w-100 segmentado mb-3" role="group" aria-label="Día de recogida">
+                <input type="radio" class="btn-check" name="dia" id="dia-hoy" value="hoy" checked />
+                <label class="btn" for="dia-hoy">Hoy</label>
+                <input type="radio" class="btn-check" name="dia" id="dia-manana" value="manana" />
+                <label class="btn" for="dia-manana">Mañana</label>
+              </div>
+              <label for="hora-recogida" class="form-label small mb-1">Hora</label>
+              <select id="hora-recogida" class="form-select"></select>
+              <p class="small text-secondary mt-1 mb-0"><i class="bi bi-clock"></i> Mínimo <span class="txt-anticipacion">15</span> mins de anticipación</p>
+            </div>
+
+            <!-- Subtotal y botón Siguiente -->
+            <div class="border rounded-4 p-3">
+              <p class="fs-5 fw-semibold mb-3" style="color:var(--verde)">Subtotal: <span id="carrito-subtotal">$0</span></p>
+              <button class="btn btn-app w-100" id="btn-siguiente">Siguiente</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- =============================================================
+             PANTALLA 5: PAGO  (prototipo en papel: 5, 5.1, 5.2, 5.3)
+             - Detalles de recogida + teléfono de contacto (editable, 5.1)
+             - Resumen desplegable y desglose (subtotal + tarifa = total)
+             - Método de pago (abre la pantalla 5.4)
+             - Validaciones al "Finalizar compra": teléfono (5.2) y método (5.3)
+             ============================================================= -->
+        <section class="pantalla d-none" id="p-pago">
+          <header class="barra">
+            <button class="btn-icono" data-ir="p-carrito" aria-label="Regresar"><i class="bi bi-chevron-left"></i></button>
+            <h1>Pago</h1>
+            <span style="width:30px"></span>
+          </header>
+
+          <div class="p-3 flex-grow-1">
+            <!-- Detalles de recogida -->
+            <div class="border rounded-4 p-3 mb-3">
+              <p class="fw-semibold mb-2">Comida Con Conciencia</p>
+              <p class="small mb-1"><i class="bi bi-geo-alt-fill text-success"></i> Recoger en: <strong id="pago-punto"></strong></p>
+              <p class="small mb-2">
+                <i class="bi bi-calendar-event text-success"></i> Fecha: <strong id="pago-fecha"></strong>
+                &nbsp; <i class="bi bi-clock text-success"></i> Hora: <strong id="pago-hora"></strong>
+              </p>
+              <div class="d-flex justify-content-between align-items-center border-top pt-2">
+                <span class="small"><i class="bi bi-telephone-fill text-success"></i> Tel: <strong id="pago-telefono"></strong></span>
+                <!-- 5.1: abre el editor de teléfono -->
+                <button class="btn-icono fs-6" id="btn-editar-tel" aria-label="Editar teléfono de contacto"><i class="bi bi-pencil-fill"></i></button>
+              </div>
+            </div>
+
+            <!-- Resumen del pedido (desplegable) -->
+            <h2 class="h6">Resumen del pedido</h2>
+            <button class="btn w-100 d-flex justify-content-between border-bottom rounded-0 px-0" data-bs-toggle="collapse" data-bs-target="#resumen-items" aria-expanded="false">
+              <span>Comida Con Conciencia — <span id="pago-num-articulos">0</span> artículos</span><i class="bi bi-chevron-down"></i>
+            </button>
+            <div class="collapse" id="resumen-items"><ul class="list-unstyled small py-2 mb-0" id="pago-lista"></ul></div>
+
+            <!-- Desglose de precios -->
+            <p class="small text-secondary mt-3 mb-1">Desglose de precios</p>
+            <div class="d-flex justify-content-between small"><span>Subtotal</span><span id="pago-subtotal"></span></div>
+            <div class="d-flex justify-content-between small mb-2"><span>Tarifa de servicio</span><span id="pago-tarifa"></span></div>
+            <div class="d-flex justify-content-between fs-4 fw-bold border-top pt-2 mb-3" style="color:var(--verde)">
+              <span>Total</span><span id="pago-total"></span>
+            </div>
+
+            <!-- Método de pago predeterminado -> abre la pantalla 5.4 -->
+            <p class="small text-secondary mb-1">Método de pago</p>
+            <button class="btn w-100 d-flex justify-content-between align-items-center border border-2 border-success rounded-pill mb-4" id="btn-metodo-pago">
+              <span id="pago-metodo"></span><i class="bi bi-chevron-right"></i>
+            </button>
+
+            <button class="btn btn-app w-100 rounded-pill" id="btn-finalizar">Finalizar compra</button>
+          </div>
+        </section>
+
+        <!-- =============================================================
+             PANTALLA 5.4: MÉTODOS DE PAGO  (prototipo en papel: 5.4, 5.4.1, 5.4.2, 5.4.3)
+             - Lista de métodos guardados (radio = predeterminado)
+             - "Agregar un método de pago" despliega el formulario de tarjeta
+             - Errores de tarjeta: número, fecha y CVV/CVC inválidos
+             - Efectivo no se "agrega": se selecciona y se paga al recoger
+             ============================================================= -->
+        <section class="pantalla d-none" id="p-metodos">
+          <header class="barra">
+            <button class="btn-icono" data-ir="p-pago" aria-label="Regresar"><i class="bi bi-chevron-left"></i></button>
+            <h1 class="text-start">Método de pago</h1>
+            <span class="avatar" aria-label="Perfil de usuario">J</span>
+          </header>
+
+          <div class="p-3 flex-grow-1">
+            <p class="small text-secondary mb-2">Tus métodos de pago</p>
+            <!-- app.js inserta aquí los métodos guardados -->
+            <div id="lista-metodos"></div>
+
+            <!-- Opción para agregar un método nuevo -->
+            <label class="d-flex justify-content-between align-items-center border rounded-3 p-2 mb-2">
+              <span><i class="bi bi-plus-lg"></i> Agregar un método de pago</span>
+              <input class="form-check-input" type="radio" name="metodo" id="metodo-agregar" value="agregar" />
+            </label>
+
+            <!-- Formulario de nueva tarjeta (oculto hasta elegir "Agregar") -->
+            <form id="form-tarjeta" class="d-none border rounded-3 p-3" novalidate>
+              <div class="btn-group w-100 segmentado mb-3" role="group" aria-label="Tipo de método">
+                <input type="radio" class="btn-check" name="tipo-nuevo" id="tipo-tarjeta" value="tarjeta" checked />
+                <label class="btn btn-sm" for="tipo-tarjeta">Tarjeta</label>
+                <input type="radio" class="btn-check" name="tipo-nuevo" id="tipo-transferencia" value="transferencia" />
+                <label class="btn btn-sm" for="tipo-transferencia">Transferencia</label>
+              </div>
+
+              <!-- Aviso si eligen transferencia (fuera del alcance del prototipo) -->
+              <p class="small text-secondary d-none" id="aviso-transferencia">
+                <i class="bi bi-info-circle"></i> La transferencia no se incluye en este prototipo. Elige "Tarjeta".
+              </p>
+
+              <div id="campos-tarjeta">
+                <div class="mb-2">
+                  <label for="tj-nombre" class="form-label small mb-1">Nombre de la tarjeta</label>
+                  <input type="text" class="form-control" id="tj-nombre" placeholder="Introduce nombre" autocomplete="cc-name" />
+                  <div class="invalid-feedback">Escribe el nombre como aparece en la tarjeta</div>
+                </div>
+                <div class="mb-2">
+                  <label for="tj-numero" class="form-label small mb-1">Número de tarjeta</label>
+                  <input type="text" inputmode="numeric" class="form-control" id="tj-numero" placeholder="0000 0000 0000 0000" maxlength="19" autocomplete="cc-number" />
+                  <div class="invalid-feedback">Número de tarjeta inválido</div>
+                </div>
+                <div class="row g-2 mb-3">
+                  <div class="col-6">
+                    <label for="tj-fecha" class="form-label small mb-1">Fecha expiración</label>
+                    <input type="text" class="form-control" id="tj-fecha" placeholder="MM/AA" maxlength="7" autocomplete="cc-exp" />
+                    <div class="invalid-feedback">Fecha inválida</div>
+                  </div>
+                  <div class="col-6">
+                    <label for="tj-cvv" class="form-label small mb-1">CVV/CVC</label>
+                    <input type="password" inputmode="numeric" class="form-control" id="tj-cvv" placeholder="•••" maxlength="4" autocomplete="cc-csc" />
+                    <div class="invalid-feedback">CVV/CVC inválido</div>
+                  </div>
+                </div>
+                <button type="submit" class="btn btn-app w-100">Añadir</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- =============================================================
+             PANTALLA 6: PROCESANDO EL PEDIDO  (prototipo en papel: 6)
+             Transición pasiva con cuenta regresiva (15 s) y "Cancelar pedido".
+             Al llegar a 0 pasa automáticamente a la pantalla 7.
+             ============================================================= -->
+        <section class="pantalla d-none" id="p-procesando">
+          <header class="barra"><h1>Procesando pedido</h1></header>
+          <div class="p-4 flex-grow-1 d-flex flex-column align-items-center text-center">
+            <i class="bi bi-cup-hot icono-procesando my-4" aria-hidden="true"></i>
+            <h2 class="h5" style="color:var(--verde)">Procesando tu orden</h2>
+            <p class="small text-secondary">Estamos confirmando tu pedido en tienda</p>
+            <!-- Resumen compacto -->
+            <div class="border rounded-3 p-2 w-100 text-start small mb-2" id="proc-lista"></div>
+            <p class="fw-semibold">Total: <span id="proc-total"></span></p>
+            <!-- Cuenta regresiva + cancelar -->
+            <div class="mt-auto w-100 d-flex justify-content-between align-items-center border rounded-3 p-2">
+              <span><i class="bi bi-stopwatch"></i> <span id="proc-contador" aria-live="polite">00:15</span> seg</span>
+              <button class="btn btn-outline-danger btn-sm" id="btn-cancelar-pedido">Cancelar pedido</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- =============================================================
+             PANTALLA 7: CÓDIGO DE PEDIDO  (prototipo en papel: 7)
+             Código corto (letra + 4 dígitos), QR y progreso en 3 etapas:
+             Pendiente → En preparación → Listo. Solo lectura.
+             ============================================================= -->
+        <section class="pantalla d-none" id="p-codigo">
+          <header class="barra">
+            <button class="btn-icono" id="btn-home" aria-label="Volver al inicio"><i class="bi bi-house-door"></i></button>
+            <h1>&nbsp;</h1>
+            <span class="avatar" aria-label="Perfil de usuario">J</span>
+          </header>
+          <div class="p-4 flex-grow-1 text-center">
+            <!-- Código del pedido: QR + código corto (letra y 4 dígitos) -->
+            <div class="border rounded-4 p-3 mb-4">
+              <p class="small text-secondary text-start mb-2">Pedido</p>
+              <div id="qr" class="d-flex justify-content-center mb-2" aria-label="Código QR del pedido"></div>
+              <p class="fs-2 fw-bold mb-0" id="codigo-pedido">A-0000</p>
+            </div>
+
+            <!-- Estado: leyenda "Estado", nombre de la lonchería y el estado resaltado.
+                 El texto del estado cambia: Pendiente → En preparación → Listo -->
+            <div class="border rounded-4 p-3 text-start">
+              <p class="small text-secondary mb-2">Estado</p>
+              <div class="d-flex justify-content-between align-items-center">
+                <span class="fw-semibold">Comida Con Conciencia</span>
+                <span class="estado-pedido" id="texto-estado" aria-live="polite">Pendiente</span>
+              </div>
+            </div>
+
+            <button class="btn btn-outline-success border-2 fw-semibold rounded-3 w-100 mt-4" id="btn-volver-inicio">Volver al inicio</button>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- =============================================================
+           BOTÓN FLOTANTE DEL CARRITO (parte de la PANTALLA 3: MENÚ)
+           Va fuera de .celular-contenido para quedarse fijo en la esquina
+           inferior derecha aunque el menú haga scroll. app.js lo muestra
+           solo en la pantalla del menú.
+           ============================================================= -->
+      <button class="carrito-flotante d-none" id="btn-carrito-flotante" aria-label="Ver carrito">
+        <i class="bi bi-cart3"></i>
+      </button>
+
+      <!-- =============================================================
+           MODAL GENÉRICO DE ALERTA (dentro del celular)
+           Se reutiliza para todos los errores (3.3, 4.1, 4.2, 5.2, 5.3).
+           Va dentro del marco del celular para que se centre en el teléfono
+           y no en toda la ventana. app.js cambia ícono, título, mensaje y
+           texto del botón con mostrarAlerta().
+           ============================================================= -->
+      <div class="capa-modal d-none" id="modal-alerta" role="alertdialog" aria-modal="true" aria-labelledby="alerta-titulo">
+        <div class="tarjeta-modal text-center">
+          <i id="alerta-icono" class="bi bi-exclamation-triangle-fill text-warning" style="font-size:3rem" aria-hidden="true"></i>
+          <h2 class="h5 mt-2" id="alerta-titulo">Título</h2>
+          <p class="small text-secondary" id="alerta-mensaje">Mensaje</p>
+          <button type="button" class="btn btn-app w-100" id="alerta-boton">Entendido</button>
+        </div>
+      </div>
+
+      <!-- =============================================================
+           MODAL: EDITAR TELÉFONO (dentro del celular)
+           Prototipo en papel: 5.1, la "solapa" de papel
+           ============================================================= -->
+      <div class="capa-modal d-none" id="modal-telefono" role="dialog" aria-modal="true" aria-labelledby="tel-titulo">
+        <div class="tarjeta-modal text-center">
+          <h2 class="h5" id="tel-titulo">Editar teléfono</h2>
+          <input type="tel" class="form-control text-center fs-5 my-2" id="input-telefono" maxlength="12" aria-describedby="tel-ayuda" />
+          <p class="small text-secondary" id="tel-ayuda">Recibirás un SMS de confirmación</p>
+          <div class="d-flex gap-2">
+            <button class="btn btn-outline-danger w-50" data-cerrar="modal-telefono">Cancelar</button>
+            <button class="btn btn-app w-50" id="btn-guardar-tel">Guardar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- =============================================================
+           AVISO BREVE (toast) dentro del celular
+           Ej.: "Tarjeta agregada", "Pedido cancelado"
+           ============================================================= -->
+      <div class="aviso-celular d-none" id="toast" role="status" aria-live="polite"></div>
+    </main>
+  </div>
+</div>
+
+<!-- =====================================================================
+     SCRIPTS
+     1. Bootstrap (modales, colapsables, toasts)
+     2. qrcodejs: genera el código QR del pedido
+     3. app.js: toda la lógica del prototipo (debe ir al final)
+     ===================================================================== -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
