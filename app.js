@@ -238,7 +238,7 @@ const inPass = document.getElementById('login-pass');
 
 document.getElementById('form-login').addEventListener('submit', e => {
   e.preventDefault();
-  const usuarioOk = inUsuario.value.trim().toLowerCase() === CONFIG.usuarioDemo;
+  const usuarioOk = inUsuario.value === CONFIG.usuarioDemo;
   const passOk = inPass.value === CONFIG.passDemo;
 
   inUsuario.classList.toggle('is-invalid', !usuarioOk);
@@ -307,13 +307,17 @@ function pintarMenu() {
 }
 
 /** Agrega un producto al carrito o muestra el error 3.3 si está forzado. */
+function mostrarErrorAgregarAlCarrito() {
+  mostrarAlerta({
+    icono: 'bi-x-circle-fill', colorIcono: 'text-danger',
+    titulo: 'Error al agregar al carrito',
+    mensaje: 'Vuelve a intentarlo más tarde.'
+  });
+}
+
 function agregarAlCarrito(id) {
   if (estado.fallaAlAgregar) {
-    mostrarAlerta({
-      icono: 'bi-x-circle-fill', colorIcono: 'text-danger',
-      titulo: 'Error al agregar al carrito',
-      mensaje: 'Vuelve a intentarlo más tarde.'
-    });
+    mostrarErrorAgregarAlCarrito();
     return;
   }
   // Si ya tiene palomita no hace nada: la cantidad se ajusta en el carrito
@@ -679,12 +683,26 @@ const modHora = document.getElementById('mod-hora');
 modHora.addEventListener('change', () => { estado.horaSimulada = modHora.value || CONFIG.horaSimulada; });
 
 document.getElementById('mod-no-disponible').addEventListener('change', e => {
-  if (e.target.checked) estado.noDisponibles.add('lic-creativo');
-  else estado.noDisponibles.delete('lic-creativo');
+  const noDisponible = e.target.checked;
+  const retirarDelCarrito = noDisponible && !!estado.carrito['lic-creativo'];
+
+  if (noDisponible) {
+    estado.noDisponibles.add('lic-creativo');
+    if (retirarDelCarrito) delete estado.carrito['lic-creativo'];
+  } else {
+    estado.noDisponibles.delete('lic-creativo');
+  }
+
   if (!document.getElementById('p-menu').classList.contains('d-none')) pintarMenu();
+  if (!document.getElementById('p-carrito').classList.contains('d-none')) pintarCarrito();
+  if (!document.getElementById('p-pago').classList.contains('d-none')) pintarPago();
+  if (retirarDelCarrito) mostrarErrorAgregarAlCarrito();
 });
 
-document.getElementById('mod-falla-carrito').addEventListener('change', e => { estado.fallaAlAgregar = e.target.checked; });
+document.getElementById('mod-falla-carrito').addEventListener('change', e => {
+  estado.fallaAlAgregar = e.target.checked;
+  if (estado.fallaAlAgregar) mostrarErrorAgregarAlCarrito();
+});
 
 document.getElementById('mod-sin-metodo').addEventListener('change', e => {
   estado.metodoSeleccionado = e.target.checked ? null : 'visa-1234';
